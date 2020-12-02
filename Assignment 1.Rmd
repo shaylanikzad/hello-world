@@ -286,6 +286,6 @@ leaflet() %>%
 
 ```
 
-## The zipcodes withthe greatest percent increase in electricity usage are highlighted on the map above. 
+## The zipcodes withthe greatest percent increase in electricity usage are highlighted on the map above. The cities were identified by comparing April of 2019 residential electricity usage to April of 2020. The values were taken as a percent increase and thresholded to be greater than a 20% increase by looking at the spread of the data. It seems that the largest increases were concentrated in the San Fransisco area. By this metric my own zipcode was actually one of those with the greatest increase. Obviously this method is very sipmle and has a lot of flaws. It is really only accounting for a very small period of time (the month of April). It also assumes that all other variables were constant between these two Aprils in subsequent years (e.g. outdoor temperature etc.). There are a lot more rigorous ways to look at this data. I could have plotted the data over time or done more complex averaging or statistical analysis. 
 
 
