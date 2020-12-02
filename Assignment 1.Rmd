@@ -21,7 +21,7 @@ library(censusapi)
 Sys.setenv(CENSUS_KEY="c8aa67e4086b4b5ce3a8717f59faa9a28f611dab")
 ```
 
-## Can I put this all in one structure 
+## Loading the Data
 ```{r}
 
 years <- 2017:2020
@@ -68,7 +68,7 @@ for(year in years) {
 
 
 
-## Data Inputs 
+## Processing Data 
 ```{r}
 
 #load the bay area zip codes
@@ -155,7 +155,6 @@ for(year in years) {
 }
   
 
-# Find the sum of the data 
 
 #sum over zipcodes 
 pge_final <-
@@ -169,33 +168,14 @@ pge_final <-
       )
   )
 
-pge_comm <- filter(pge_final, CUSTOMERCLASS %in% c("Gas- Commercial","Elec- Commercial"))
 
-#isolate commercial data and sum gas and electric 
-pge_comm_final <- 
-  pge_comm %>%
-    group_by(YEAR, MONTH)%>%
-    summarize(TOTALKBTUs = 
-                sum(SUMKBTUs, 
-                    na.rm = T
-                    )
-              )
+#isolate commercial and residential 
 
+pge_comm_gas <- filter(pge_final, CUSTOMERCLASS %in% c("Gas- Commercial"))
+pge_comm_elec <- filter(pge_final, CUSTOMERCLASS %in% c("Elec- Commercial"))
 
-#residential data and sum gas and electric 
-
-pge_res <- filter(pge_final, CUSTOMERCLASS %in% c("Gas- Residential","Elec- Residential"))
-
-pge_res_final <- 
-  pge_res %>%
-    group_by(YEAR, MONTH)%>%
-    summarize(TOTALKBTUs = 
-                sum(SUMKBTUs, 
-                    na.rm = T
-                    )
-              )
-
-#sum of just the gas data 
+pge_res_gas <- filter(pge_final, CUSTOMERCLASS %in% c("Gas- Residential"))
+pge_res_elec <- filter(pge_final, CUSTOMERCLASS %in% c("Elec- Residential"))
 
 ```
 
@@ -203,123 +183,60 @@ pge_res_final <-
 ## Generate Plots 
 
 ```{r}
-pge_chart <-
-  
-  
-  
-  
-  
-  pge_comm_final %>% 
+#create data sets for graphing 
+
+DATE <- seq(as.Date("2017-01-01"), by="1 month", length.out=45)
+CLASS <- c(rep(c("GAS"), 45), rep(c("ELECTRIC"), 45))
+BTUs_comm <- c(pge_comm_gas$SUMKBTUs, pge_comm_elec$SUMKBTUs)
+BTUs_res <- c(pge_res_gas$SUMKBTUs, pge_res_elec$SUMKBTUs)
+DATA_comm = data.frame(DATE, CLASS, BTUs_comm)
+DATA_res = data.frame(DATE, CLASS, BTUs_res)
+
+#commercial graph 
+
+pge_commercial <-
+  DATA_comm %>% 
   ggplot() +
   geom_bar(
     aes(
-      x = MONTH %>% factor(),
-      y = TOTALKBTUs,
-      fill = YEAR
+      x = DATE,
+      y = BTUs_comm,
+      fill = CLASS
     ),
     stat = "identity",
     position = "stack"
   ) +
   labs(
-    x = "Month",
-    y = "kWh",
-    title = "PG&E Territory Monthly Electricity Usage, 2019",
-    fill = "Electricity Type"
-  )
-
-pge_chart
-
-#make it interactive 
-
-pge_chart %>% ggplotly()
-
-
-
-```
-
-
-
-
-## Filtering and processing data 
-```{r}
-#load the bay area zip codes
-
-zipcodes <- read_csv("bayarea_zipcodes.csv")
-zips <- zipcodes[,3]
-
-bay_zips <- NULL
-
-indexes <- 1:187
-for (index in indexes){
-  temp <- toString(zips[index,1])
-  bay_zips <- c(bay_zips, temp)
-}
-
-#filter and process electrical data
-
-pge_elec_final <-
-  pge_elec %>%
-  filter(
-    CUSTOMERCLASS %in% 
-      c(
-        "Elec- Residential",
-        "Elec- Commercial"
-      ), 
-    ZIPCODE %in%
-      bay_zips
-  ) %>% 
-  
-  select(
-    !c(COMBINED, AVERAGEKWH)
-  ) %>% 
-  group_by(YEAR, MONTH, CUSTOMERCLASS) %>% 
-  summarize(
-    TOTALKWH = 
-      sum(
-        TOTALKWH, 
-        na.rm = T
-      )
-  ) %>% 
-  mutate(
-    TOTALKBTUs =
-      TOTALKWH*3.412
+    y = "kBTUs",
+    title = "Bay Area Commercial Energy Usage"
   )
 
 
+pge_commercial %>% ggplotly()
 
-#filter and process gas data 
+#residential graph 
 
-pge_gas_final <-
-  pge_gas %>%
-  filter(
-    CUSTOMERCLASS %in% 
-      c(
-        "Gas- Residential",
-        "Gas- Commercial"
-      ), 
-    ZIPCODE %in%
-      bay_zips
-  ) %>% 
-  
-  select(
-    !c(COMBINED, AVERAGETHM)
-  ) %>% 
-  group_by(YEAR, MONTH, CUSTOMERCLASS) %>% 
-  summarize(
-    TOTALTHM = 
-      sum(
-        TOTALTHM, 
-        na.rm = T
-      )
-  ) %>% 
-  mutate(
-    TOTALKBTUs =
-      TOTALTHM*29.3
-      )
+pge_residential <-
+  DATA_res %>% 
+  ggplot() +
+  geom_bar(
+    aes(
+      x = DATE,
+      y = BTUs_res,
+      fill = CLASS
+    ),
+    stat = "identity",
+    position = "stack"
+  ) +
+  labs(
+    y = "kBTUs",
+    title = "Bay Area Residential Energy Usage"
+  )
 
 
-# find overall BTUs for each class 
-sum <- pge_elec_final[,5]+pge_gas_final[,5]
+pge_residential %>% ggplotly()
+
+
 
 ```
 
