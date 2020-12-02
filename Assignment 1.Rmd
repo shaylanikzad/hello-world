@@ -20,3 +20,308 @@ library(censusapi)
 
 Sys.setenv(CENSUS_KEY="c8aa67e4086b4b5ce3a8717f59faa9a28f611dab")
 ```
+
+## Can I put this all in one structure 
+```{r}
+
+years <- 2017:2020
+quarters <- 1:4 
+types <- list("Electric", "Gas")
+
+pge_elec <- NULL
+pge_gas <- NULL
+
+for(year in years) {
+ 
+   for (quarter in quarters) {
+     
+     if(year == 2020){
+      
+        if(quarter == 4){
+        
+           next
+       }
+     }
+     
+     for (type in types) {
+ 
+        filename <- paste0("PGE_", year, "_Q", quarter, "_", type, "UsageByZip.csv")
+        temp <- read_csv(filename) 
+      
+      
+        if(type == "Electric") {
+
+          pge_elec <- rbind(pge_elec, temp)
+        
+       }
+      
+        if(type == "Gas") {
+  
+          pge_gas <- rbind(pge_gas, temp)
+          
+        }
+      }
+    }
+  }
+
+```
+
+
+
+## Data Inputs 
+```{r}
+
+#load the bay area zip codes
+
+zipcodes <- read_csv("bayarea_zipcodes.csv")
+zips <- zipcodes[,3]
+
+bay_zips <- NULL
+
+indexes <- 1:187
+for (index in indexes){
+  temp <- toString(zips[index,1])
+  bay_zips <- c(bay_zips, temp)
+}
+
+
+#Filtering and processing electric and gas data 
+years <- 2017:2020
+quarters <- 1:4 
+types <- list("Electric", "Gas")
+
+pge <- NULL
+
+
+for(year in years) {
+ 
+   for (quarter in quarters) {
+     
+     if(year == 2020){
+      
+        if(quarter == 4){
+        
+           next
+       }
+     }
+     
+     for (type in types) {
+ 
+        filename <- paste0("PGE_", year, "_Q", quarter, "_", type, "UsageByZip.csv")
+        temp <- read_csv(filename) 
+      
+      
+        if(type == "Electric") {
+          
+            temp_final <-
+              temp %>%
+                filter( CUSTOMERCLASS %in% 
+                    c(
+                      "Elec- Residential",
+                      "Elec- Commercial"), 
+                    ZIPCODE %in%
+                      bay_zips) %>% 
+              mutate(
+                TOTALKBTUs =
+                  TOTALKWH*3.412
+              )%>%
+              select(
+                !c(COMBINED, AVERAGEKWH, TOTALKWH, TOTALCUSTOMERS)
+                )
+        }
+        
+          if(type == "Gas") {
+          
+            temp_final <-
+              temp %>%
+                filter( CUSTOMERCLASS %in% 
+                    c(
+                      "Gas- Residential",
+                      "Gas- Commercial"), 
+                    ZIPCODE %in%
+                      bay_zips) %>% 
+                mutate(
+                TOTALKBTUs =
+                  TOTALTHM*29.3
+              )%>%
+              select(
+                !c(COMBINED, AVERAGETHM, TOTALTHM, TOTALCUSTOMERS)
+                )
+          }
+        
+        pge <-  rbind(pge, temp_final)
+     }
+   }
+}
+  
+
+# Find the sum of the data 
+
+#sum over zipcodes 
+pge_final <-
+  pge %>%
+  group_by(YEAR, MONTH, CUSTOMERCLASS) %>% 
+  summarize(
+    SUMKBTUs = 
+      sum(
+        TOTALKBTUs, 
+        na.rm = T
+      )
+  )
+
+pge_comm <- filter(pge_final, CUSTOMERCLASS %in% c("Gas- Commercial","Elec- Commercial"))
+
+#isolate commercial data and sum gas and electric 
+pge_comm_final <- 
+  pge_comm %>%
+    group_by(YEAR, MONTH)%>%
+    summarize(TOTALKBTUs = 
+                sum(SUMKBTUs, 
+                    na.rm = T
+                    )
+              )
+
+
+#residential data and sum gas and electric 
+
+pge_res <- filter(pge_final, CUSTOMERCLASS %in% c("Gas- Residential","Elec- Residential"))
+
+pge_res_final <- 
+  pge_res %>%
+    group_by(YEAR, MONTH)%>%
+    summarize(TOTALKBTUs = 
+                sum(SUMKBTUs, 
+                    na.rm = T
+                    )
+              )
+
+#sum of just the gas data 
+
+```
+
+
+## Generate Plots 
+
+```{r}
+pge_chart <-
+  
+  
+  
+  
+  
+  pge_comm_final %>% 
+  ggplot() +
+  geom_bar(
+    aes(
+      x = MONTH %>% factor(),
+      y = TOTALKBTUs,
+      fill = YEAR
+    ),
+    stat = "identity",
+    position = "stack"
+  ) +
+  labs(
+    x = "Month",
+    y = "kWh",
+    title = "PG&E Territory Monthly Electricity Usage, 2019",
+    fill = "Electricity Type"
+  )
+
+pge_chart
+
+#make it interactive 
+
+pge_chart %>% ggplotly()
+
+
+
+```
+
+
+
+
+## Filtering and processing data 
+```{r}
+#load the bay area zip codes
+
+zipcodes <- read_csv("bayarea_zipcodes.csv")
+zips <- zipcodes[,3]
+
+bay_zips <- NULL
+
+indexes <- 1:187
+for (index in indexes){
+  temp <- toString(zips[index,1])
+  bay_zips <- c(bay_zips, temp)
+}
+
+#filter and process electrical data
+
+pge_elec_final <-
+  pge_elec %>%
+  filter(
+    CUSTOMERCLASS %in% 
+      c(
+        "Elec- Residential",
+        "Elec- Commercial"
+      ), 
+    ZIPCODE %in%
+      bay_zips
+  ) %>% 
+  
+  select(
+    !c(COMBINED, AVERAGEKWH)
+  ) %>% 
+  group_by(YEAR, MONTH, CUSTOMERCLASS) %>% 
+  summarize(
+    TOTALKWH = 
+      sum(
+        TOTALKWH, 
+        na.rm = T
+      )
+  ) %>% 
+  mutate(
+    TOTALKBTUs =
+      TOTALKWH*3.412
+  )
+
+
+
+#filter and process gas data 
+
+pge_gas_final <-
+  pge_gas %>%
+  filter(
+    CUSTOMERCLASS %in% 
+      c(
+        "Gas- Residential",
+        "Gas- Commercial"
+      ), 
+    ZIPCODE %in%
+      bay_zips
+  ) %>% 
+  
+  select(
+    !c(COMBINED, AVERAGETHM)
+  ) %>% 
+  group_by(YEAR, MONTH, CUSTOMERCLASS) %>% 
+  summarize(
+    TOTALTHM = 
+      sum(
+        TOTALTHM, 
+        na.rm = T
+      )
+  ) %>% 
+  mutate(
+    TOTALKBTUs =
+      TOTALTHM*29.3
+      )
+
+
+# find overall BTUs for each class 
+sum <- pge_elec_final[,5]+pge_gas_final[,5]
+
+```
+
+
+
