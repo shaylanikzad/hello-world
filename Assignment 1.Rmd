@@ -239,6 +239,6 @@ pge_residential %>% ggplotly()
 
 
 ```
-
+## If we are using March 2020 as the onset of the pandemic (first counties shut down mid march), for the commercial data. We can see the there is a significant decrease in power consumption in the commercial sector following the March shutdowns, which turns upward over time, as expected. Residential consumption is increased after march compared to previous years, which is again, expected. Consumption increase is mostly electric. 
 
 
