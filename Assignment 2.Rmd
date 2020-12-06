@@ -1,0 +1,154 @@
+---
+title: "Assignment 2"
+author: "Shayla Nikzad"
+date: "12/6/2020"
+output: html_document
+---
+## Setup
+```{r setup, include = F}
+knitr::opts_chunk$set(warning = F, message = F)
+```
+
+## Load packages 
+```{r}
+library(tidyverse)
+library(sf)
+library(tigris)
+library(leaflet)
+library(censusapi)
+
+Sys.setenv(CENSUS_KEY="b1f6bae8291cffb092a4d2ad892d430db36d538f")
+
+acs_vars_2018_5yr <-
+  listCensusMetadata(
+    name = "2018/acs/acs5",
+    type = "variables"
+  )
+```
+## Fetch Data 
+
+```{r}
+
+census_race_labels <- 
+  c(
+    "White Alone",
+    "Black or African American",
+    "American Indian and Alaska Native Alone",
+    "Asian Alone",
+    "Native Hawaiian and Other Pacific Islander Alone)",
+    "Some Other Race Alone",
+    "Two or More Races"
+  )
+
+education_race <-
+  1:7 %>% 
+  map_dfr(function(x){
+    getCensus(
+      name = "acs/acs5",
+      vintage = 2018,
+      region = "county:097",
+      regionin = "state:06",
+      vars = paste0("group(C15002",LETTERS[x],")")
+    ) %>%
+      select(!c(GEO_ID,state,NAME) & !ends_with(c("EA","MA","M"))) %>%
+      pivot_longer(
+        ends_with("E"),
+        names_to = "variable",
+        values_to = "estimate"
+      ) %>%
+      left_join(
+        acs_vars_2018_5yr %>% 
+          select(name, label), 
+        by = c("variable" = "name")
+      ) %>% 
+      select(-variable) %>% 
+      separate(
+        label,
+        into = c(NA,NA,NA, "attainment"),
+        sep = "!!"
+      ) %>% 
+      filter(!is.na(attainment)) %>% 
+      mutate(race = census_race_labels[x])
+  })
+
+education_race <- select(education_race, !c(county))
+
+```
+
+## Creat plots 
+
+```{r}
+
+#Stacked bar graph 
+education_race %>% 
+  group_by(attainment, race) %>% 
+  summarize(estimate = sum(estimate)) %>% 
+  ggplot() +
+  geom_bar(
+    aes(
+      x = attainment %>% factor(levels = education_race$attainment[1:4]),
+      y = estimate,
+      fill = race
+    ),
+    stat = "identity",
+    position = "stack"
+  ) +
+  labs(
+    x = "Educational attainment",
+    y = "Number of households",
+    title = "Educational attainment (for 25 years and older)",
+    fill = "Race of householder"
+  ) +
+  coord_flip()
+
+#Filled bar graph 
+education_race %>% 
+  group_by(attainment, race) %>% 
+  summarize(estimate = sum(estimate)) %>% 
+  ggplot() +
+  geom_bar(
+    aes(
+      x = attainment %>% factor(levels = rev(education_race$attainment[1:4])),
+      y = estimate,
+      fill = race
+    ),
+    stat = "identity",
+    position = "fill"
+  ) +
+  labs(
+    x = "Educational Attainment",
+    y = "Population Fraction",
+    title = "Educational Attainment by Race (for 25 years and older)",
+    fill = "Race of householder"
+  ) +
+  coord_flip() +
+  theme(
+    legend.position = "bottom",
+    legend.direction = "vertical"
+  )
+```
+## I plotted the data in Sonoma county. The data does indicate a clear disparity in educational attainment skewed toward white folks. This was of course not very clear from the stacked bar graph because the population in the area is disproportionally white. However, when you plot the filled plot it becomes readily apparent. The disparity is increasing with level of education. 
+
+```{r}
+pums_vars_2018 <- 
+  pums_variables %>%
+  filter(year == 2018, survey == "acs5")
+pums_vars_2018_distinct_hh <- 
+  pums_vars_2018 %>%
+  distinct(var_code, var_label, data_type, level) %>% 
+  filter(level == "housing")
+ca_pums <- get_pums(
+  variables = c(
+    "PUMA",
+    "NP",
+    "HINCP",
+    "TEN",
+    "ACCESS"
+  ),
+  state = "CA",
+  survey = "acs5",
+  recode = T
+)
+
+```
+
