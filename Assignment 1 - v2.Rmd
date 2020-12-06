@@ -1,0 +1,293 @@
+---
+title: "Assignment 1"
+author: "Shayla Nikzad"
+date: "9/29/2020"
+output: html_document
+---
+## Setup
+```{r setup, include = F}
+knitr::opts_chunk$set(warning = F, message = F)
+```
+
+## Loading Libraries
+```{r}
+library(tidyverse)
+library(plotly)
+library(sf)
+library(tigris)
+library(leaflet)
+library(censusapi)
+
+Sys.setenv(CENSUS_KEY="c8aa67e4086b4b5ce3a8717f59faa9a28f611dab")
+```
+
+
+
+## Loading and Processing Data 
+```{r}
+
+#configuring the data 
+
+bay_county_names <-
+  c(
+    "Alameda",
+    "Contra Costa",
+    "Marin",
+    "Napa",
+    "San Francisco",
+    "San Mateo",
+    "Santa Clara",
+    "Solano",
+    "Sonoma"
+  )
+
+bay_counties <-
+  counties("CA", cb = T, progress_bar = F) %>%
+  filter(NAME %in% bay_county_names)
+
+
+usa_zips <- 
+  zctas(cb = T, progress_bar = F)
+
+bay_zips <-
+  usa_zips %>% 
+  st_centroid() %>% 
+  .[bay_counties, ] %>% 
+  st_set_geometry(NULL) %>% 
+  left_join(usa_zips %>% select(GEOID10)) %>% 
+  st_as_sf()
+
+#Filtering and processing electric and gas data 
+years <- 2017:2020
+quarters <- 1:4 
+types <- list("Electric", "Gas")
+
+pge <- NULL
+
+
+for(year in years) {
+ 
+   for (quarter in quarters) {
+     
+     if(year == 2020){
+      
+        if(quarter == 4){
+        
+           next
+       }
+     }
+     
+     for (type in types) {
+ 
+        filename <- paste0("PGE_", year, "_Q", quarter, "_", type, "UsageByZip.csv")
+        temp <- read_csv(filename) 
+      
+      
+        if(type == "Gas") {
+          
+            temp_final <-
+              temp %>%
+                filter( CUSTOMERCLASS %in% 
+                    c(
+                      "Gas- Residential",
+                      "Gas- Commercial") ) %>%
+                      mutate(ZIPCODE = ZIPCODE %>% as.character()) %>% 
+                      group_by(ZIPCODE) %>% 
+                      right_join(
+                        bay_zips %>% select(GEOID10),
+                        by = c("ZIPCODE" = "GEOID10")
+                        ) %>% 
+                      st_as_sf() %>% 
+                      st_transform(4326) %>%
+                      mutate(
+                        TOTALKBTUs =TOTALTHM*99.9761 )%>%
+                      select(
+                        !c(COMBINED, AVERAGETHM, TOTALTHM, TOTALCUSTOMERS)
+                        )
+        }
+        
+        if(type == "Electric") {
+          
+            temp_final <-
+              temp %>%
+                filter( CUSTOMERCLASS %in% 
+                    c(
+                      "Elec- Residential",
+                      "Elec- Commercial") ) %>%
+                      mutate(ZIPCODE = ZIPCODE %>% as.character()) %>% 
+                      group_by(ZIPCODE) %>% 
+                      right_join(
+                        bay_zips %>% select(GEOID10),
+                        by = c("ZIPCODE" = "GEOID10")
+                        ) %>% 
+                      st_as_sf() %>% 
+                      st_transform(4326) %>%
+                      mutate(
+                        TOTALKBTUs =TOTALKWH*3.412 )%>%
+                      select(
+                        !c(COMBINED, AVERAGEKWH, TOTALKWH, TOTALCUSTOMERS)
+                        )
+        }
+        
+        pge <-  rbind(pge, temp_final)
+     }
+   }
+}
+  
+
+
+#sum over zipcodes 
+pge_final <-
+  pge %>%
+   group_by(YEAR, MONTH, CUSTOMERCLASS) %>% 
+   summarize(
+    SUMKBTUs = 
+      sum(
+        TOTALKBTUs, 
+        na.rm = T
+      )
+   )
+
+pge_final <- filter(pge_final, YEAR != 2017 | MONTH != 9)
+
+#isolate commercial and residential 
+
+pge_comm_gas <- filter(pge_final, CUSTOMERCLASS %in% c("Gas- Commercial"))
+pge_comm_elec <- filter(pge_final, CUSTOMERCLASS %in% c("Elec- Commercial"))
+
+pge_res_gas <- filter(pge_final, CUSTOMERCLASS %in% c("Gas- Residential"))
+pge_res_elec <- filter(pge_final, CUSTOMERCLASS %in% c("Elec- Residential"))
+
+```
+
+
+## Generate Plots 
+
+```{r}
+#create data sets for graphing 
+
+DATE <- seq(as.Date("2017-01-01"), by="1 month", length.out=45)
+DATE <- DATE[DATE != "2017-09-01"]
+CLASS <- c(rep(c("GAS"), 44), rep(c("ELECTRIC"), 44))
+BTUs_comm <- c(pge_comm_gas$SUMKBTUs, pge_comm_elec$SUMKBTUs)
+BTUs_res <- c(pge_res_gas$SUMKBTUs, pge_res_elec$SUMKBTUs)
+DATA_comm = data.frame(DATE, CLASS, BTUs_comm)
+DATA_res = data.frame(DATE, CLASS, BTUs_res)
+
+#commercial graph 
+
+pge_comm <-
+  DATA_comm %>% 
+  ggplot() +
+  geom_bar(
+    aes(
+      x = DATE,
+      y = BTUs_comm,
+      fill = CLASS
+    ),
+    stat = "identity",
+    position = "stack"
+  ) +
+  labs(
+    y = "kBTUs",
+    title = "Bay Area Commercial Energy Usage"
+  )
+
+
+pge_comm %>% ggplotly()
+
+#residential graph 
+
+pge_res <-
+  DATA_res %>% 
+  ggplot() +
+  geom_bar(
+    aes(
+      x = DATE,
+      y = BTUs_res,
+      fill = CLASS
+    ),
+    stat = "identity",
+    position = "stack"
+  ) +
+  labs(
+    y = "kBTUs",
+    title = "Bay Area Residential Energy Usage"
+  )
+
+
+pge_res %>% ggplotly()
+
+
+
+```
+## Using March 2020 as the onset of the pandemic (the first bay area counties shut down mid march), for the commercial data We can see the there is a significant decrease in power consumption in the commercial sector following the March shutdowns, which turns upward over time, as expected. Residential consumption is increased after march compared to previous years, which is again, expected. 
+
+
+## Creating Map 
+
+```{r}
+#filter to residential electric in April 2019 and 2020 to only have the same set of zipcodes 
+april_2020 <-
+  pge %>% 
+  filter(CUSTOMERCLASS == "Elec- Residential", YEAR == "2020", MONTH == "4") %>%
+    group_by(ZIPCODE)
+
+april_2019 <-
+  pge %>% 
+  filter(CUSTOMERCLASS == "Elec- Residential", YEAR == "2019", MONTH == "4", ZIPCODE %in% c(april_2020$ZIPCODE)) %>%
+    group_by(ZIPCODE)
+
+
+april_2020 <-
+  april_2020 %>% 
+  filter(ZIPCODE %in% c(april_2019$ZIPCODE)) %>%
+    group_by(ZIPCODE)
+
+#calculate the percent change 
+
+CHANGE <- 100*(april_2020$TOTALKBTUs - april_2019$TOTALKBTUs)/april_2019$TOTALKBTUs
+
+DATA_FINAL <- cbind(april_2019, CHANGE)
+DATA_FINAL <- na.omit(DATA_FINAL)
+#DATA_FINAL <- filter(DATA_FINAL, CHANGE > 20 & Change <0)
+
+
+#Making the plot 
+res_pal <- colorNumeric(
+  palette = "Blues",
+  domain = 
+    DATA_FINAL$CHANGE
+)
+
+leaflet() %>% 
+  addTiles() %>% 
+  addPolygons(
+    data = DATA_FINAL,
+    fillColor = ~res_pal(CHANGE),
+    color = "white",
+    opacity = 0.5,
+    fillOpacity = 0.5,
+    weight = 1,
+    label = ~paste0(
+      round(CHANGE), 
+      " Percent Change Between 2019 to 2020 ",
+      ZIPCODE
+    ),
+    highlightOptions = highlightOptions(
+      weight = 2,
+      opacity = 1
+    )
+  ) %>% 
+  addLegend(
+    data = DATA_FINAL,
+    pal = res_pal,
+    values = ~CHANGE,
+    title = "Increase Between April 2019 to April 2020 (%)"
+    )
+
+```
+
+## The zipcodes withthe greatest percent increase in electricity usage are highlighted on the map above. The cities were identified by comparing April of 2019 residential electricity usage to April of 2020. The values were taken as a percent increase and thresholded to be greater than a 20% increase by looking at the spread of the data. It seems that the largest increases were concentrated in the San Fransisco area. By this metric my own zipcode was actually one of those with the greatest increase. Obviously this method is very sipmle and has a lot of flaws. It is really only accounting for a very small period of time (the month of April). It also assumes that all other variables were constant between these two Aprils in subsequent years (e.g. outdoor temperature etc.). There are a lot more rigorous ways to look at this data. I could have plotted the data over time or done more complex averaging or statistical analysis. 
+
+
